@@ -1,0 +1,19 @@
+{
+  "Parameters": {
+    "ProjectName": "three-tier",
+    "Environment": "prod",
+    "VpcCidr": "10.1.0.0/16",
+    "PublicSubnet1Cidr": "10.1.1.0/24",
+    "PublicSubnet2Cidr": "10.1.2.0/24",
+    "PrivateSubnet1Cidr": "10.1.11.0/24",
+    "PrivateSubnet2Cidr": "10.1.12.0/24",
+    "DBSubnet1Cidr": "10.1.21.0/24",
+    "DBSubnet2Cidr": "10.1.22.0/24",
+    "InstanceType": "t3.small",
+    "MinSize": "2",
+    "MaxSize": "4",
+    "DesiredCapacity": "2",
+    "DBInstanceClass": "db.t3.small",
+    "MultiAZ": "true"
+  }
+}

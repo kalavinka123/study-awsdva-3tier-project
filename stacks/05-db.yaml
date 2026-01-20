@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: '3-Tier Architecture - DB Tier (RDS MySQL)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'three-tier'
+
+  Environment:
+    Type: String
+    Default: 'dev'
+
+  DBInstanceClass:
+    Type: String
+    Default: 'db.t3.micro'
+
+  DBEngine:
+    Type: String
+    Default: 'mysql'
+
+  DBEngineVersion:
+    Type: String
+    Default: '8.0'
+
+  DBName:
+    Type: String
+    Default: 'appdb'
+
+  DBUsername:
+    Type: String
+    Default: 'admin'
+    NoEcho: true
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+
+  MultiAZ:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+Conditions:
+  IsMultiAZ: !Equals [!Ref MultiAZ, 'true']
+
+Resources:
+  # DB Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${ProjectName}-${Environment}-db-subnet-group'
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-DBSubnet1Id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-DBSubnet2Id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-subnet-group'
+
+  # Secrets Manager - DB Password
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-db-secret'
+      Description: RDS database credentials
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DBUsername}"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  # RDS Instance
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-${Environment}-db'
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: !Ref DBEngine
+      EngineVersion: !Ref DBEngineVersion
+      DBName: !Ref DBName
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:password}}'
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: !If [IsMultiAZ, true, false]
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-DBSecurityGroupId'
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'Mon:04:00-Mon:05:00'
+      AutoMinorVersionUpgrade: true
+      PubliclyAccessible: false
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Attach secret to RDS
+  DBSecretAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DBSecret
+      TargetId: !Ref DBInstance
+      TargetType: AWS::RDS::DBInstance
+
+Outputs:
+  DBEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DBEndpoint'
+
+  DBPort:
+    Description: RDS Port
+    Value: !GetAtt DBInstance.Endpoint.Port
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DBPort'
+
+  DBSecretArn:
+    Description: DB Secret ARN
+    Value: !Ref DBSecret
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DBSecretArn'
+
+  DBInstanceId:
+    Description: RDS Instance ID
+    Value: !Ref DBInstance
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DBInstanceId'

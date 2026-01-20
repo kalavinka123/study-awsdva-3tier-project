@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: '3-Tier Architecture - Web Tier (ALB + EC2 Auto Scaling)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'three-tier'
+
+  Environment:
+    Type: String
+    Default: 'dev'
+
+  InstanceType:
+    Type: String
+    Default: 't3.micro'
+
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+
+  MinSize:
+    Type: Number
+    Default: 1
+
+  MaxSize:
+    Type: Number
+    Default: 3
+
+  DesiredCapacity:
+    Type: Number
+    Default: 2
+
+Resources:
+  # Application Load Balancer
+  WebALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-web-alb'
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups:
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-ALBSecurityGroupId'
+      Subnets:
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PublicSubnet1Id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PublicSubnet2Id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-web-alb'
+
+  # Target Group
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-web-tg'
+      Port: 80
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-VpcId'
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-web-tg'
+
+  # ALB Listener
+  WebALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref WebALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+  # Launch Template
+  WebLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-${Environment}-web-lt'
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name:
+            Fn::ImportValue: !Sub '${ProjectName}-${Environment}-EC2InstanceProfileName'
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-WebSecurityGroupId'
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y httpd
+            systemctl start httpd
+            systemctl enable httpd
+
+            # Create simple web page
+            cat <<EOF > /var/www/html/index.html
+            <!DOCTYPE html>
+            <html>
+            <head><title>${ProjectName} - Web Tier</title></head>
+            <body>
+            <h1>Welcome to ${ProjectName}</h1>
+            <p>Environment: ${Environment}</p>
+            <p>Instance ID: $(curl -s http://169.254.169.254/latest/meta-data/instance-id)</p>
+            </body>
+            </html>
+            EOF
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-${Environment}-web'
+              - Key: Tier
+                Value: Web
+
+  # Auto Scaling Group
+  WebAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${ProjectName}-${Environment}-web-asg'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebLaunchTemplate
+        Version: !GetAtt WebLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PublicSubnet1Id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PublicSubnet2Id'
+      TargetGroupARNs:
+        - !Ref WebTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-web-asg'
+          PropagateAtLaunch: false
+
+  # Scaling Policy
+  WebScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WebAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70
+
+Outputs:
+  WebALBDNSName:
+    Description: Web ALB DNS Name
+    Value: !GetAtt WebALB.DNSName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebALBDNSName'
+
+  WebALBArn:
+    Description: Web ALB ARN
+    Value: !Ref WebALB
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebALBArn'
+
+  WebTargetGroupArn:
+    Description: Web Target Group ARN
+    Value: !Ref WebTargetGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebTargetGroupArn'
