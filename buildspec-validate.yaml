@@ -1,0 +1,27 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install cfn-lint
+
+  build:
+    commands:
+      - echo "Validating CloudFormation templates..."
+      - |
+        for template in stacks/*.yaml; do
+          echo "Validating $template"
+          aws cloudformation validate-template --template-body file://$template
+          cfn-lint $template
+        done
+      - echo "All templates validated successfully!"
+
+  post_build:
+    commands:
+      - echo "Validation completed on $(date)"
+
+artifacts:
+  files:
+    - '**/*'

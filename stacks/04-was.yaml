@@ -1,0 +1,212 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: '3-Tier Architecture - WAS Tier (Internal ALB + EC2 Auto Scaling)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'three-tier'
+
+  Environment:
+    Type: String
+    Default: 'dev'
+
+  InstanceType:
+    Type: String
+    Default: 't3.micro'
+
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+
+  MinSize:
+    Type: Number
+    Default: 1
+
+  MaxSize:
+    Type: Number
+    Default: 3
+
+  DesiredCapacity:
+    Type: Number
+    Default: 2
+
+  AppPort:
+    Type: Number
+    Default: 8080
+
+Resources:
+  # Internal Application Load Balancer
+  InternalALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-internal-alb'
+      Type: application
+      Scheme: internal
+      SecurityGroups:
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-InternalALBSecurityGroupId'
+      Subnets:
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PrivateSubnet1Id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PrivateSubnet2Id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-internal-alb'
+
+  # Target Group
+  WASTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-was-tg'
+      Port: !Ref AppPort
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-VpcId'
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: !Ref AppPort
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-was-tg'
+
+  # ALB Listener
+  InternalALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref InternalALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WASTargetGroup
+
+  # Launch Template
+  WASLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-${Environment}-was-lt'
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name:
+            Fn::ImportValue: !Sub '${ProjectName}-${Environment}-EC2InstanceProfileName'
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-WASSecurityGroupId'
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y java-17-amazon-corretto python3 python3-pip
+
+            # Simple Python HTTP server for demo
+            cat <<'PYEOF' > /opt/app.py
+            from http.server import HTTPServer, BaseHTTPRequestHandler
+            import json
+            import socket
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    if self.path == '/health':
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'status': 'healthy'}).encode())
+                    else:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        response = {
+                            'message': 'Hello from WAS',
+                            'hostname': socket.gethostname(),
+                            'environment': '${Environment}'
+                        }
+                        self.wfile.write(json.dumps(response).encode())
+
+            if __name__ == '__main__':
+                server = HTTPServer(('0.0.0.0', ${AppPort}), Handler)
+                print(f'Starting server on port ${AppPort}')
+                server.serve_forever()
+            PYEOF
+
+            # Create systemd service
+            cat <<'SERVICEEOF' > /etc/systemd/system/was-app.service
+            [Unit]
+            Description=WAS Application
+            After=network.target
+
+            [Service]
+            Type=simple
+            User=root
+            ExecStart=/usr/bin/python3 /opt/app.py
+            Restart=always
+
+            [Install]
+            WantedBy=multi-user.target
+            SERVICEEOF
+
+            systemctl daemon-reload
+            systemctl start was-app
+            systemctl enable was-app
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-${Environment}-was'
+              - Key: Tier
+                Value: WAS
+
+  # Auto Scaling Group
+  WASAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${ProjectName}-${Environment}-was-asg'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WASLaunchTemplate
+        Version: !GetAtt WASLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PrivateSubnet1Id'
+        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PrivateSubnet2Id'
+      TargetGroupARNs:
+        - !Ref WASTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-was-asg'
+          PropagateAtLaunch: false
+
+  # Scaling Policy
+  WASScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WASAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70
+
+Outputs:
+  InternalALBDNSName:
+    Description: Internal ALB DNS Name
+    Value: !GetAtt InternalALB.DNSName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-InternalALBDNSName'
+
+  InternalALBArn:
+    Description: Internal ALB ARN
+    Value: !Ref InternalALB
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-InternalALBArn'
+
+  WASTargetGroupArn:
+    Description: WAS Target Group ARN
+    Value: !Ref WASTargetGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WASTargetGroupArn'
