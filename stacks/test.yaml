@@ -1,0 +1,10 @@
+Resources:  
+  MyEC2Instance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      InstanceType: t3.micro
+      ## aws ssm get-parameters --names /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --region ap-northeast-2 --query "Parameters[0].Value" --output text
+      ImageId: "ami-0092e0c93f74c293a"
+      Tags:
+        - Key: Name
+          Value: MyTestEC2Instance
