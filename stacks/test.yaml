@@ -7,4 +7,4 @@ Resources:
       ImageId: "ami-0092e0c93f74c293a"
       Tags:
         - Key: Name
-          Value: MyTestEC2Instance2     
+          Value: MyTestEC2Instance
