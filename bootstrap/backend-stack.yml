@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Backend: ECR + ECS (EC2 launch type). VPC/Subnets are parameterized."
+
+Parameters:
+  AppName:
+    Type: String
+    Default: demo-api
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: "Default VPC for PoC, replace later."
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: "Subnets for ECS container instances (2+ recommended)."
+
+  InstanceType:
+    Type: String
+    Default: t3.small
+
+  DesiredCapacity:
+    Type: Number
+    Default: 1
+
+  MaxSize:
+    Type: Number
+    Default: 2
+
+  ContainerImage:
+    Type: String
+    Default: "nginx:latest"  # PoC: public image, later: <ECR_URI>:tag
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+
+Resources:
+  # ECR Repo
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref AppName
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  # ECS Cluster
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AppName}-cluster"
+
+  # Instance role/profile for ECS container instances
+  EcsInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-ecs-instance-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        # ECS agent needs this baseline policy
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+
+  EcsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref EcsInstanceRole]
+
+  # Security group for EC2 instances (PoC open inbound is NOT recommended; tighten later)
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${AppName} ecs instances sg"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  # ECS-optimized AMI via SSM public parameter (no hardcode AMI)
+  LatestEcsAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AppName}-ecs-lt"
+      LaunchTemplateData:
+        ImageId: !Ref LatestEcsAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt EcsInstanceProfile.Arn
+        SecurityGroupIds: [!Ref InstanceSecurityGroup]
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo ECS_CLUSTER=${EcsCluster} >> /etc/ecs/ecs.config
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref SubnetIds
+      DesiredCapacity: !Ref DesiredCapacity
+      MinSize: 1
+      MaxSize: !Ref MaxSize
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+
+  CapacityProvider:
+    Type: AWS::ECS::CapacityProvider
+    Properties:
+      Name: !Sub "${AppName}-cp"
+      AutoScalingGroupProvider:
+        AutoScalingGroupArn: !Ref AutoScalingGroup
+        ManagedScaling:
+          Status: ENABLED
+          TargetCapacity: 100
+        ManagedTerminationProtection: DISABLED
+
+  ClusterCapacityProviderAssoc:
+    Type: AWS::ECS::ClusterCapacityProviderAssociations
+    Properties:
+      Cluster: !Ref EcsCluster
+      CapacityProviders: [!Ref CapacityProvider]
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: !Ref CapacityProvider
+          Weight: 1
+
+  # Task Definition (EC2 launch type)
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref AppName
+      RequiresCompatibilities: ["EC2"]
+      NetworkMode: bridge
+      ContainerDefinitions:
+        - Name: !Ref AppName
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              HostPort: !Ref ContainerPort
+              Protocol: tcp
+
+  # ECS Service using capacity provider
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: ClusterCapacityProviderAssoc
+    Properties:
+      ServiceName: !Sub "${AppName}-svc"
+      Cluster: !Ref EcsCluster
+      DesiredCount: 1
+      CapacityProviderStrategy:
+        - CapacityProvider: !Ref CapacityProvider
+          Weight: 1
+      TaskDefinition: !Ref TaskDefinition
+
+Outputs:
+  EcrRepoUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+  ClusterName:
+    Value: !Ref EcsCluster
+  ServiceName:
+    Value: !Ref Service
