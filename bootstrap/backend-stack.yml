@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Backend: ECR + ECS (EC2 launch type). VPC/Subnets are parameterized."
+Description: "Backend: ECR + ECS (Fargate). VPC/Subnets are parameterized."
 
 Parameters:
   AppName:
@@ -12,27 +12,35 @@ Parameters:
 
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: "Subnets for ECS container instances (2+ recommended)."
+    Description: "Subnets for Fargate tasks (2+ recommended). Public subnets for PoC, or private subnets with NAT/VPC endpoints."
 
-  InstanceType:
+  AssignPublicIp:
     Type: String
-    Default: t3.small
-
-  DesiredCapacity:
-    Type: Number
-    Default: 1
-
-  MaxSize:
-    Type: Number
-    Default: 2
+    Default: ENABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: "ENABLED for public subnets PoC. DISABLED for private subnets (requires NAT/VPC endpoints)."
 
   ContainerImage:
     Type: String
-    Default: "nginx:latest"  # PoC: public image, later: <ECR_URI>:tag
+    Default: "nginx:latest" # PoC: public image, later: <ECR_URI>:tag
 
   ContainerPort:
     Type: Number
     Default: 80
+
+  Cpu:
+    Type: String
+    Default: "256"
+    AllowedValues: ["256", "512", "1024", "2048", "4096"]
+
+  Memory:
+    Type: String
+    Default: "512"
+    AllowedValues: ["512", "1024", "2048", "3072", "4096", "5120", "6144", "7168", "8192", "16384", "30720"]
+
+  DesiredCount:
+    Type: Number
+    Default: 1
 
 Resources:
   # ECR Repo
@@ -50,34 +58,36 @@ Resources:
     Properties:
       ClusterName: !Sub "${AppName}-cluster"
 
-  # Instance role/profile for ECS container instances
-  EcsInstanceRole:
+  # CloudWatch Logs (recommended)
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${AppName}"
+      RetentionInDays: 14
+
+  # Task Execution Role (required for Fargate)
+  TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${AppName}-ecs-instance-role"
+      RoleName: !Sub "${AppName}-ecs-task-exec-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Service: ec2.amazonaws.com
+              Service: ecs-tasks.amazonaws.com
             Action: "sts:AssumeRole"
       ManagedPolicyArns:
-        # ECS agent needs this baseline policy
-        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
-  EcsInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Roles: [!Ref EcsInstanceRole]
-
-  # Security group for EC2 instances (PoC open inbound is NOT recommended; tighten later)
-  InstanceSecurityGroup:
+  # Security group for Fargate task ENIs
+  TaskSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub "${AppName} ecs instances sg"
+      GroupDescription: !Sub "${AppName} fargate tasks sg"
       VpcId: !Ref VpcId
       SecurityGroupIngress:
+        # PoC: open inbound to container port (NOT recommended for production)
         - IpProtocol: tcp
           FromPort: !Ref ContainerPort
           ToPort: !Ref ContainerPort
@@ -86,85 +96,44 @@ Resources:
         - IpProtocol: "-1"
           CidrIp: 0.0.0.0/0
 
-  # ECS-optimized AMI via SSM public parameter (no hardcode AMI)
-  LatestEcsAmiId:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
-
-  LaunchTemplate:
-    Type: AWS::EC2::LaunchTemplate
-    Properties:
-      LaunchTemplateName: !Sub "${AppName}-ecs-lt"
-      LaunchTemplateData:
-        ImageId: !Ref LatestEcsAmiId
-        InstanceType: !Ref InstanceType
-        IamInstanceProfile:
-          Arn: !GetAtt EcsInstanceProfile.Arn
-        SecurityGroupIds: [!Ref InstanceSecurityGroup]
-        UserData:
-          Fn::Base64: !Sub |
-            #!/bin/bash
-            echo ECS_CLUSTER=${EcsCluster} >> /etc/ecs/ecs.config
-
-  AutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-      VPCZoneIdentifier: !Ref SubnetIds
-      DesiredCapacity: !Ref DesiredCapacity
-      MinSize: 1
-      MaxSize: !Ref MaxSize
-      LaunchTemplate:
-        LaunchTemplateId: !Ref LaunchTemplate
-        Version: !GetAtt LaunchTemplate.LatestVersionNumber
-
-  CapacityProvider:
-    Type: AWS::ECS::CapacityProvider
-    Properties:
-      Name: !Sub "${AppName}-cp"
-      AutoScalingGroupProvider:
-        AutoScalingGroupArn: !Ref AutoScalingGroup
-        ManagedScaling:
-          Status: ENABLED
-          TargetCapacity: 100
-        ManagedTerminationProtection: DISABLED
-
-  ClusterCapacityProviderAssoc:
-    Type: AWS::ECS::ClusterCapacityProviderAssociations
-    Properties:
-      Cluster: !Ref EcsCluster
-      CapacityProviders: [!Ref CapacityProvider]
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: !Ref CapacityProvider
-          Weight: 1
-
-  # Task Definition (EC2 launch type)
+  # Task Definition (Fargate)
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Family: !Ref AppName
-      RequiresCompatibilities: ["EC2"]
-      NetworkMode: bridge
+      RequiresCompatibilities: ["FARGATE"]
+      NetworkMode: awsvpc
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: !Ref AppName
           Image: !Ref ContainerImage
           Essential: true
           PortMappings:
             - ContainerPort: !Ref ContainerPort
-              HostPort: !Ref ContainerPort
               Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
 
-  # ECS Service using capacity provider
+  # ECS Service (Fargate)
   Service:
     Type: AWS::ECS::Service
-    DependsOn: ClusterCapacityProviderAssoc
     Properties:
       ServiceName: !Sub "${AppName}-svc"
       Cluster: !Ref EcsCluster
-      DesiredCount: 1
-      CapacityProviderStrategy:
-        - CapacityProvider: !Ref CapacityProvider
-          Weight: 1
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
       TaskDefinition: !Ref TaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups: [!Ref TaskSecurityGroup]
+          AssignPublicIp: !Ref AssignPublicIp
 
 Outputs:
   EcrRepoUri:
@@ -173,3 +142,5 @@ Outputs:
     Value: !Ref EcsCluster
   ServiceName:
     Value: !Ref Service
+  LogGroupName:
+    Value: !Ref LogGroup
