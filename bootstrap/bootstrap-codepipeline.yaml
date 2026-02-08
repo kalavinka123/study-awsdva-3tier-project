@@ -18,7 +18,10 @@ Parameters:
     Description: GitHub default branch name
 
 Resources:
-  # S3 Bucket for Pipeline Artifacts
+  # ============================================================================
+  # Pre-requisite Resources
+  # ============================================================================
+
   CodePipelineArtifactStoreBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -50,7 +53,6 @@ Resources:
               Bool:
                 aws:SecureTransport: false
 
-  # CodePipeline Service Role
   CodePipelineServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -89,7 +91,6 @@ Resources:
                   - iam:PassRole
                 Resource: '*'
 
-  # IAM Role for CloudFormation
   CloudFormationRole:
     Type: AWS::IAM::Role
     Properties:
@@ -104,7 +105,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AdministratorAccess
 
-  # CodeConnection
   GithubConnection:
     Type: AWS::CodeStarConnections::Connection
     Properties:
@@ -114,7 +114,11 @@ Resources:
       # - Key: Project
       #   Value: ProjectB
 
-  # CodePipeline
+
+  # ============================================================================
+  # CodePipeline Resource
+  # ============================================================================
+
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
