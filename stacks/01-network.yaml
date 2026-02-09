@@ -14,6 +14,14 @@ Parameters:
     Type: String
     Default: '10.0.0.0/16'
 
+  AZ1:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: 'First Availability Zone'
+
+  AZ2:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: 'Second Availability Zone'
+
   PublicSubnet1Cidr:
     Type: String
     Default: '10.0.1.0/24'
@@ -64,57 +72,49 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  # Public Subnets (Web Tier)
+  # Public Subnets
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnet1Cidr
-      AvailabilityZone: !Select [0, !GetAZs '']
+      AvailabilityZone: !Ref AZ1
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-public-subnet-1'
-        - Key: Tier
-          Value: Web
 
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnet2Cidr
-      AvailabilityZone: !Select [1, !GetAZs '']
+      AvailabilityZone: !Ref AZ2
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-public-subnet-2'
-        - Key: Tier
-          Value: Web
 
-  # Private Subnets (WAS Tier)
+  # Private Subnets (App Tier)
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnet1Cidr
-      AvailabilityZone: !Select [0, !GetAZs '']
+      AvailabilityZone: !Ref AZ1
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-private-subnet-1'
-        - Key: Tier
-          Value: WAS
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnet2Cidr
-      AvailabilityZone: !Select [1, !GetAZs '']
+      AvailabilityZone: !Ref AZ2
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-private-subnet-2'
-        - Key: Tier
-          Value: WAS
 
   # DB Subnets
   DBSubnet1:
@@ -122,139 +122,69 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref DBSubnet1Cidr
-      AvailabilityZone: !Select [0, !GetAZs '']
+      AvailabilityZone: !Ref AZ1
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-db-subnet-1'
-        - Key: Tier
-          Value: DB
 
   DBSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref DBSubnet2Cidr
-      AvailabilityZone: !Select [1, !GetAZs '']
+      AvailabilityZone: !Ref AZ2
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-db-subnet-2'
-        - Key: Tier
-          Value: DB
 
-  # Elastic IP for NAT Gateway (AZ-a)
-  NatGateway1EIP:
+  # NAT Gateway (1개 - 과금 고려)
+  NatGatewayEIP:
     Type: AWS::EC2::EIP
     DependsOn: InternetGatewayAttachment
     Properties:
       Domain: vpc
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-nat-eip-1'
+          Value: !Sub '${ProjectName}-${Environment}-nat-eip'
 
-  # Elastic IP for NAT Gateway (AZ-b)
-  NatGateway2EIP:
-    Type: AWS::EC2::EIP
-    DependsOn: InternetGatewayAttachment
-    Properties:
-      Domain: vpc
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-nat-eip-2'
-
-  # NAT Gateway (AZ-a - Public Subnet 1)
-  NatGateway1:
+  NatGateway:
     Type: AWS::EC2::NatGateway
     Properties:
-      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
       SubnetId: !Ref PublicSubnet1
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-nat-gw-1'
+          Value: !Sub '${ProjectName}-${Environment}-nat-gw'
 
-  # NAT Gateway (AZ-b - Public Subnet 2)
-  NatGateway2:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NatGateway2EIP.AllocationId
-      SubnetId: !Ref PublicSubnet2
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-nat-gw-2'
-
-  # Public Route Table
-  PublicRouteTable:
+  # Private Route Table (NAT Gateway 경유)
+  PrivateRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-public-rt'
+          Value: !Sub '${ProjectName}-${Environment}-private-rt'
 
-  PublicRoute:
-    Type: AWS::EC2::Route
-    DependsOn: InternetGatewayAttachment
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
-  PublicSubnet1RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet1
-      RouteTableId: !Ref PublicRouteTable
-
-  PublicSubnet2RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet2
-      RouteTableId: !Ref PublicRouteTable
-
-  # Private Route Table 1 (AZ-a) -> NAT Gateway 1
-  PrivateRouteTable1:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-private-rt-1'
-
-  PrivateRoute1:
+  PrivateRoute:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId: !Ref PrivateRouteTable1
+      RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway1
+      NatGatewayId: !Ref NatGateway
 
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable1
-
-  # Private Route Table 2 (AZ-b) -> NAT Gateway 2
-  PrivateRouteTable2:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-private-rt-2'
-
-  PrivateRoute2:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable2
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway2
+      RouteTableId: !Ref PrivateRouteTable
 
   PrivateSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable2
+      RouteTableId: !Ref PrivateRouteTable
 
-  # DB Route Table (No internet access)
+  # DB Route Table (인터넷 접근 없음)
   DBRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -317,9 +247,3 @@ Outputs:
     Value: !Ref DBSubnet2
     Export:
       Name: !Sub '${ProjectName}-${Environment}-DBSubnet2Id'
-
-  VpcCidr:
-    Description: VPC CIDR Block
-    Value: !Ref VpcCidr
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-VpcCidr'
