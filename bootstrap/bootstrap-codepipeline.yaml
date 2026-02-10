@@ -90,6 +90,14 @@ Resources:
                 Action:
                   - iam:PassRole
                 Resource: '*'
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource:
+                  - !GetAtt CfnLintProject.Arn
+                  - !GetAtt CfnNagProject.Arn
+                  - !GetAtt CfnValidateProject.Arn
 
   CloudFormationRole:
     Type: AWS::IAM::Role
@@ -114,6 +122,125 @@ Resources:
       # - Key: Project
       #   Value: ProjectB
 
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-codebuild-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub '${CodePipelineArtifactStoreBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt CodePipelineArtifactStoreBucket.Arn
+              - Effect: Allow
+                Action:
+                  - cloudformation:ValidateTemplate
+                Resource: '*'
+
+  CfnValidateProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-cfn-validate'
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0 ## TODO: Use pre-installed image
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            build:
+              commands:
+                - echo Starting AWS CloudFormation validate-template
+                - |
+                  for template in stacks/*.yaml; do
+                    echo "Validating $template"
+                    aws cloudformation validate-template --template-body file://$template
+                  done
+                - echo CloudFormation validation completed successfully
+
+  CfnLintProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-cfn-lint'
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0 ## TODO: Use pre-installed image
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.11
+              commands:
+                - echo Installing cfn-lint
+                - pip install cfn-lint
+            build:
+              commands:
+                - echo Starting cfn-lint validation
+                - cfn-lint stacks/*.yaml --info
+                - echo cfn-lint validation completed successfully
+
+  CfnNagProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-cfn-nag'
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0 ## TODO: Use pre-installed image
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                ruby: 3.1
+              commands:
+                - echo Installing cfn-nag
+                - gem install cfn-nag
+            build:
+              commands:
+                - echo Starting cfn-nag security validation
+                - cfn_nag_scan --input-path stacks/
+                - echo cfn-nag validation completed successfully
 
   # ============================================================================
   # CodePipeline Resource
@@ -163,6 +290,45 @@ Resources:
                 FullRepositoryId: !Ref GitHubRepositoryId
                 OutputArtifactFormat: CODE_ZIP
               RunOrder: 1
+
+        - Name: Validate
+          Actions:
+            - Name: CfnValidate
+              InputArtifacts:
+                - Name: SourceOutputArtifact
+              OutputArtifacts: []
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CfnValidateProject
+              RunOrder: 1
+            - Name: CfnLint
+              InputArtifacts:
+                - Name: SourceOutputArtifact
+              OutputArtifacts: []
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CfnLintProject
+              RunOrder: 2
+            - Name: CfnNag
+              InputArtifacts:
+                - Name: SourceOutputArtifact
+              OutputArtifacts: []
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CfnNagProject
+              RunOrder: 3
 
         - Name: Deploy
           Actions:
