@@ -36,6 +36,6 @@
 * **장바구니/세션:** ElastiCache 또는 DynamoDB (빠른 응답 속도)
 
 ### 참고문서
-https://aws.amazon.com/ko/products/databases/
-https://docs.aws.amazon.com/ko_kr/amazondynamodb/latest/developerguide/bp-general-nosql-design.html
-https://docs.aws.amazon.com/ko_kr/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html
+* https://aws.amazon.com/ko/products/databases/
+* https://docs.aws.amazon.com/ko_kr/amazondynamodb/latest/developerguide/bp-general-nosql-design.html
+* https://docs.aws.amazon.com/ko_kr/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html
