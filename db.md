@@ -3,6 +3,7 @@
 ## AWS 데이터베이스 서비스 종류 분석
 
 | DB 서비스 종류 | 분류 | 데이터 특성 | 대표적인 사용 예시 |
+| :--- | :--- | :--- | :--- |
 | **Aurora / RDS** | 관계형 (RDBMS) | 정형화된 관계 (표준), 데이터 무결성 중요 | 사용자 정보(회원가입), 주문 내역, 결제 시스템 |
 | **DynamoDB** | NoSQL (Key-Value) | 유연한 스키마 & 대규모 트래픽 처리에 최적 | 장바구니, 게임 상태 저장, 서버리스 앱의 메인 DB |
 | **ElastiCache** | In-Memory (Cache) | 초고속 읽기/쓰기 (휘발성) | 로그인 세션 관리, 자주 조회되는 인기 상품 캐싱 |
@@ -30,13 +31,11 @@
 * **선정 (단순 저장):** Amazon DynamoDB
 * **이유:** 장바구니나 사용자 설정처럼 데이터 구조가 유동적이고 쇼핑몰 이벤트 등으로 트래픽이 폭주해도 성능 저하가 없어야 한다면, 스케일링이 자유로운 DynamoDB가 적합하다고 합니다.
 
-### 3. 검색 기능 강화(검색 측면)
-> "사용자가 '여름'이라고 검색했을 때, '여름 셔츠', '여름 샌들' 등 관련 상품을 빠르게 보여주고 싶다면?"
-
-* **선정:** Amazon OpenSearch
-* **이유:** RDS에서 `LIKE %검색어%` 쿼리를 날리면 데이터가 많아질수록 시스템이 느려집니다. 반면에 검색 기능을 분리하여 OpenSearch에 맡기면 오타 교정, 자동 완성, 필터링 등 강력한 검색 엔진 기능을 제공한다고 합니다.
-
 ### 종합 예시: 온라인 쇼핑몰 아키텍처
 * **사용자/주문 데이터:** Aurora (안전한 저장)
-* **상품 검색:** OpenSearch (빠른 검색)
 * **장바구니/세션:** ElastiCache 또는 DynamoDB (빠른 응답 속도)
+
+### 참고문서
+https://aws.amazon.com/ko/products/databases/
+https://docs.aws.amazon.com/ko_kr/amazondynamodb/latest/developerguide/bp-general-nosql-design.html
+https://docs.aws.amazon.com/ko_kr/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html
