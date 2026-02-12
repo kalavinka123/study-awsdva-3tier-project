@@ -75,12 +75,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: !Sub "${AppName} fargate tasks sg"
-      SecurityGroupIngress:
-        # PoC: open inbound to container port (NOT recommended for production)
-        - IpProtocol: tcp
-          FromPort: !Ref ContainerPort
-          ToPort: !Ref ContainerPort
-          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VpcId
       SecurityGroupEgress:
         - IpProtocol: "-1"
           CidrIp: 0.0.0.0/0
