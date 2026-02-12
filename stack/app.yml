@@ -1,0 +1,37 @@
+  # Task Definition (Fargate)
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref AppName
+      RequiresCompatibilities: ["FARGATE"]
+      NetworkMode: awsvpc
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref AppName
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  # ECS Service (Fargate)
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "${AppName}-svc"
+      Cluster: !Ref EcsCluster
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups: [!Ref TaskSecurityGroup]
