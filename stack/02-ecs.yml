@@ -6,19 +6,9 @@ Parameters:
     Type: String
     Default: demo-api
 
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: "Default VPC for PoC, replace later."
-
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: "Subnets for Fargate tasks (2+ recommended). Public subnets for PoC, or private subnets with NAT/VPC endpoints."
-
-  AssignPublicIp:
-    Type: String
-    Default: ENABLED
-    AllowedValues: [ENABLED, DISABLED]
-    Description: "ENABLED for public subnets PoC. DISABLED for private subnets (requires NAT/VPC endpoints)."
 
   ContainerImage:
     Type: String
@@ -85,7 +75,6 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: !Sub "${AppName} fargate tasks sg"
-      VpcId: !Ref VpcId
       SecurityGroupIngress:
         # PoC: open inbound to container port (NOT recommended for production)
         - IpProtocol: tcp
@@ -133,14 +122,3 @@ Resources:
         AwsvpcConfiguration:
           Subnets: !Ref SubnetIds
           SecurityGroups: [!Ref TaskSecurityGroup]
-          AssignPublicIp: !Ref AssignPublicIp
-
-Outputs:
-  EcrRepoUri:
-    Value: !GetAtt EcrRepository.RepositoryUri
-  ClusterName:
-    Value: !Ref EcsCluster
-  ServiceName:
-    Value: !Ref Service
-  LogGroupName:
-    Value: !Ref LogGroup
