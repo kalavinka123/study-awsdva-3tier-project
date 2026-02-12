@@ -14,7 +14,7 @@ Parameters:
 
   GitHubDefaultBranch:
     Type: String
-    Default: 'feature/codepipeline' ## TODO: release/**
+    Default: 'feature/codepipeline-test-integration' ## TODO: release/**
     Description: GitHub default branch name
 
 Resources:
@@ -316,7 +316,7 @@ Resources:
                 Provider: CodeBuild
               Configuration:
                 ProjectName: !Ref CfnLintProject
-              RunOrder: 2
+              RunOrder: 1
             - Name: CfnNag
               InputArtifacts:
                 - Name: SourceOutputArtifact
@@ -328,11 +328,11 @@ Resources:
                 Provider: CodeBuild
               Configuration:
                 ProjectName: !Ref CfnNagProject
-              RunOrder: 3
+              RunOrder: 1
 
-        - Name: Deploy
+        - Name: CreateChangeSet-Network-Dev
           Actions:
-            - Name: ProvisionInfra
+            - Name: CreateChangeSet
               InputArtifacts:
                 - Name: SourceOutputArtifact
               ActionTypeId:
@@ -341,9 +341,39 @@ Resources:
                 Version: '1'
                 Provider: CloudFormation
               Configuration:
-                ActionMode: CREATE_UPDATE ## TODO: CHANGE_SET_REPLACE, CHANGE_SET_EXECUTE 
-                StackName: !Sub '${ProjectName}-Infra'
-                TemplatePath: SourceOutputArtifact::stacks/test.yaml
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: !Sub '${ProjectName}-Network-Dev'
+                ChangeSetName: !Sub '${ProjectName}-Network-Dev-ChangeSet'
+                TemplatePath: SourceOutputArtifact::stacks/01-network.yaml
+                TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
               RunOrder: 1
+
+        - Name: ApprovalForNetwork-Dev
+          Actions:
+            - Name: ApproveChangeSet
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: '1'
+                Provider: Manual
+              Configuration:
+                CustomData: 'Please review the Network Dev changeset and approve to proceed with deployment'
+              RunOrder: 1
+
+        - Name: Deploy-Network-Dev
+          Actions:
+            - Name: ExecuteChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: !Sub '${ProjectName}-Network-Dev'
+                ChangeSetName: !Sub '${ProjectName}-Network-Dev-ChangeSet'
+              RunOrder: 1
+
+        ## TODO: More stages to come
