@@ -1,0 +1,78 @@
+Parameters:
+  ProjectName:
+    Type: String
+    Default: three-tier
+
+  Environment:
+    Type: String
+    Default: dev
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+
+  ContainerImage:
+    Type: String
+
+  ContainerPort:
+    Type: Number
+    Default: 80
+
+  Cpu:
+    Type: String
+    Default: "256"
+    AllowedValues: ["256", "512", "1024", "2048", "4096"]
+
+  Memory:
+    Type: String
+    Default: "512"
+    AllowedValues: ["512", "1024", "2048", "3072", "4096", "5120", "6144", "7168", "8192", "16384", "30720"]
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+
+Resources:
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ProjectName}-${Environment}"
+      RequiresCompatibilities: ["FARGATE"]
+      NetworkMode: awsvpc
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      ExecutionRoleArn:
+        Fn::ImportValue:
+          !Sub "${ProjectName}-${Environment}-TaskExecutionRoleArn"
+      ContainerDefinitions:
+        - Name: !Sub "${ProjectName}-${Environment}"
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Fn::ImportValue:
+                  !Sub "${ProjectName}-${Environment}-LogGroupName"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "${ProjectName}-${Environment}-svc"
+      Cluster:
+        Fn::ImportValue:
+          !Sub "${ProjectName}-${Environment}-ClusterArn"
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - Fn::ImportValue:
+                !Sub "${ProjectName}-${Environment}-TaskSecurityGroupId"
+          AssignPublicIp: DISABLED # Private subnet
