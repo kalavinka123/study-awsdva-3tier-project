@@ -1,0 +1,194 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Backend: ECR + ECS (Fargate) + ALB"
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "three-tier"
+
+  Environment:
+    Type: String
+    Default: "dev"
+
+Resources:
+
+  # ----------------------------------------------------------------------------
+  # ECR
+  # ----------------------------------------------------------------------------
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${ProjectName}-${Environment}"
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  # ----------------------------------------------------------------------------
+  # ECS Cluster
+  # ----------------------------------------------------------------------------
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${ProjectName}-${Environment}-cluster"
+
+  # ----------------------------------------------------------------------------
+  # Logs
+  # ----------------------------------------------------------------------------
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ProjectName}-${Environment}"
+      RetentionInDays: 14
+
+  # ----------------------------------------------------------------------------
+  # Execution Role
+  # ----------------------------------------------------------------------------
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ----------------------------------------------------------------------------
+  # Security Groups (RULE 없이 생성)
+  # ----------------------------------------------------------------------------
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${ProjectName}-${Environment} alb sg"
+      VpcId: !ImportValue
+        Fn::Sub: "${ProjectName}-${Environment}-VpcId"
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${ProjectName}-${Environment} ecs task sg"
+      VpcId: !ImportValue
+        Fn::Sub: "${ProjectName}-${Environment}-VpcId"
+
+  # ----------------------------------------------------------------------------
+  # SG RULES (분리된 리소스)
+  # ----------------------------------------------------------------------------
+
+  # 1️⃣ Internet → ALB
+  AlbIngressHttp:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+
+  # 2️⃣ ALB → ECS (Ingress on ECS)
+  TaskIngressFromAlb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref TaskSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  # 3️⃣ ALB → ECS (Egress on ALB)
+  AlbEgressToTask:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      DestinationSecurityGroupId: !Ref TaskSecurityGroup
+
+  # 4️⃣ ECS → Internet (NAT 통해 외부 통신)
+  TaskEgressInternet:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref TaskSecurityGroup
+      IpProtocol: "-1"
+      CidrIp: 0.0.0.0/0
+
+  # ----------------------------------------------------------------------------
+  # ALB
+  # ----------------------------------------------------------------------------
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-${Environment}-alb"
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets:
+        - !ImportValue
+          Fn::Sub: "${ProjectName}-${Environment}-PublicSubnet1Id"
+        - !ImportValue
+          Fn::Sub: "${ProjectName}-${Environment}-PublicSubnet2Id"
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+
+  # ----------------------------------------------------------------------------
+  # Target Group
+  # ----------------------------------------------------------------------------
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-${Environment}-tg"
+      VpcId: !ImportValue
+        Fn::Sub: "${ProjectName}-${Environment}-VpcId"
+      TargetType: ip
+      Protocol: HTTP
+      Port: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: "200-399"
+
+  # ----------------------------------------------------------------------------
+  # Listener
+  # ----------------------------------------------------------------------------
+  AlbListenerHttp:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+Outputs:
+  EcsClusterArn:
+    Value: !GetAtt EcsCluster.Arn
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-EcsClusterArn"
+
+  TaskExecutionRoleArn:
+    Value: !GetAtt TaskExecutionRole.Arn
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-TaskExecutionRoleArn"
+
+  LogGroupName:
+    Value: !Ref LogGroup
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-LogGroupName"
+
+  TaskSecurityGroupId:
+    Value: !Ref TaskSecurityGroup
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-TaskSecurityGroupId"
+
+  AlbTargetGroupArn:
+    Value: !Ref AlbTargetGroup
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-AlbTargetGroupArn"
+
+  AlbDnsName:
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
