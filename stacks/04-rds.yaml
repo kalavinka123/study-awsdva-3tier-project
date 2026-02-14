@@ -8,13 +8,14 @@ Parameters:
   Environment:
     Type: String
     Default: 'dev'
-  DBUser:
-    Type: String
-    Default: 'admin'
-  DBPassword:
-    Type: String
-    NoEcho: true
-    Description: 'DB password (min 8 chars)'
+  # [피드백 반영] DBUser, DBPassword 파라미터 삭제함 (Secrets Manager 사용)
+  # DBUser:
+  #   Type: String
+  #   Default: 'admin'
+  # DBPassword:
+  #   Type: String
+  #   NoEcho: true
+  #   Description: 'DB password (min 8 chars)'
 
 Resources:
   # 1. RDS용 보안 그룹 (Security Group)
@@ -26,6 +27,7 @@ Resources:
         Fn::ImportValue: !Sub '${ProjectName}-${Environment}-VpcId' # 네트워크 파일과 연결
       SecurityGroupIngress:
         # 테스트를 위해 임시로 내부 네트워크(VPC 전체) 대역 10.0.0.0/16 에서의 접속 허용
+        # [피드백 반영] TODO: 나중에 보안 그룹 ID 참조 방식으로 변경하고 이 규칙은 삭제할 것
         - IpProtocol: tcp
           FromPort: 3306
           ToPort: 3306
@@ -49,8 +51,12 @@ Resources:
       EngineVersion: '8.0'
       DBInstanceClass: db.t3.micro # 프리티어 및 테스트용
       AllocatedStorage: 20
-      MasterUsername: !Ref DBUser
-      MasterUserPassword: !Ref DBPassword
+      # [피드백 반영] Secrets Manager에서 username 키의 값을 가져옴
+      # MasterUsername: !Ref DBUser
+      MasterUsername: '{{resolve:secretsmanager:dev/three-tier-db:SecretString:username}}'
+      # [피드백 반영] Secrets Manager에서 password 키의 값을 가져옴
+      # MasterUserPassword: !Ref DBPassword
+      MasterUserPassword: '{{resolve:secretsmanager:dev/three-tier-db:SecretString:password}}'
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
@@ -62,4 +68,5 @@ Outputs:
     Description: 'RDS Connection Endpoint'
     Value: !GetAtt PrimaryDBInstance.Endpoint.Address
     Export:
+
       Name: !Sub '${ProjectName}-${Environment}-RdsEndpoint'
