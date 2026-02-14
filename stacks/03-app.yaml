@@ -41,8 +41,7 @@ Resources:
       Cpu: !Ref Cpu
       Memory: !Ref Memory
       ExecutionRoleArn:
-        Fn::ImportValue:
-          !Sub "${ProjectName}-${Environment}-TaskExecutionRoleArn"
+        Fn::ImportValue: !Sub "${ProjectName}-${Environment}-TaskExecutionRoleArn"
       ContainerDefinitions:
         - Name: !Sub "${ProjectName}-${Environment}"
           Image: !Ref ContainerImage
@@ -54,8 +53,7 @@ Resources:
             LogDriver: awslogs
             Options:
               awslogs-group:
-                Fn::ImportValue:
-                  !Sub "${ProjectName}-${Environment}-LogGroupName"
+                Fn::ImportValue: !Sub "${ProjectName}-${Environment}-LogGroupName"
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
 
@@ -64,15 +62,21 @@ Resources:
     Properties:
       ServiceName: !Sub "${ProjectName}-${Environment}-svc"
       Cluster:
-        Fn::ImportValue:
-          !Sub "${ProjectName}-${Environment}-ClusterArn"
+        Fn::ImportValue: !Sub "${ProjectName}-${Environment}-EcsClusterArn"
       DesiredCount: !Ref DesiredCount
       LaunchType: FARGATE
       TaskDefinition: !Ref TaskDefinition
+
+      # ALB Target Group 연결
+      LoadBalancers:
+        - ContainerName: !Sub "${ProjectName}-${Environment}"
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-AlbTargetGroupArn"
+
       NetworkConfiguration:
         AwsvpcConfiguration:
           Subnets: !Ref SubnetIds
           SecurityGroups:
-            - Fn::ImportValue:
-                !Sub "${ProjectName}-${Environment}-TaskSecurityGroupId"
-          AssignPublicIp: DISABLED # Private subnet
+            - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-TaskSecurityGroupId"
+          AssignPublicIp: DISABLED  # Private subnet
