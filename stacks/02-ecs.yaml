@@ -11,8 +11,9 @@ Parameters:
     Default: "dev"
 
 Resources:
+
   # ----------------------------------------------------------------------------
-  # ECR Repo
+  # ECR
   # ----------------------------------------------------------------------------
   EcrRepository:
     Type: AWS::ECR::Repository
@@ -31,7 +32,7 @@ Resources:
       ClusterName: !Sub "${ProjectName}-${Environment}-cluster"
 
   # ----------------------------------------------------------------------------
-  # CloudWatch Logs
+  # Logs
   # ----------------------------------------------------------------------------
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -40,7 +41,7 @@ Resources:
       RetentionInDays: 14
 
   # ----------------------------------------------------------------------------
-  # Task Execution Role (required for Fargate)
+  # Execution Role
   # ----------------------------------------------------------------------------
   TaskExecutionRole:
     Type: AWS::IAM::Role
@@ -56,42 +57,67 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
   # ----------------------------------------------------------------------------
-  # Security Groups
+  # Security Groups (RULE 없이 생성)
   # ----------------------------------------------------------------------------
-  # ALB SG (Public): allow inbound 80 from internet
+
   AlbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: !Sub "${ProjectName}-${Environment} alb sg"
-      VpcId:
-        Fn::ImportValue: !Sub "${ProjectName}-${Environment}-VpcId"
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-      SecurityGroupEgress:
-        - IpProtocol: "-1"
-          CidrIp: 0.0.0.0/0
+      VpcId: !ImportValue
+        Fn::Sub: "${ProjectName}-${Environment}-VpcId"
 
-  # Task SG (Private): allow inbound ONLY from ALB SG (port 80)
   TaskSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub "${ProjectName}-${Environment} fargate tasks sg"
-      VpcId:
-        Fn::ImportValue: !Sub "${ProjectName}-${Environment}-VpcId"
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          SourceSecurityGroupId: !Ref AlbSecurityGroup
-      SecurityGroupEgress:
-        - IpProtocol: "-1"
-          CidrIp: 0.0.0.0/0
+      GroupDescription: !Sub "${ProjectName}-${Environment} ecs task sg"
+      VpcId: !ImportValue
+        Fn::Sub: "${ProjectName}-${Environment}-VpcId"
 
   # ----------------------------------------------------------------------------
-  # ALB (Public Subnets)
+  # SG RULES (분리된 리소스)
+  # ----------------------------------------------------------------------------
+
+  # 1️⃣ Internet → ALB
+  AlbIngressHttp:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+
+  # 2️⃣ ALB → ECS (Ingress on ECS)
+  TaskIngressFromAlb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref TaskSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  # 3️⃣ ALB → ECS (Egress on ALB)
+  AlbEgressToTask:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      DestinationSecurityGroupId: !Ref TaskSecurityGroup
+
+  # 4️⃣ ECS → Internet (NAT 통해 외부 통신)
+  TaskEgressInternet:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref TaskSecurityGroup
+      IpProtocol: "-1"
+      CidrIp: 0.0.0.0/0
+
+  # ----------------------------------------------------------------------------
+  # ALB
   # ----------------------------------------------------------------------------
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -101,18 +127,22 @@ Resources:
       Type: application
       IpAddressType: ipv4
       Subnets:
-        - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-PublicSubnet1Id"
-        - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-PublicSubnet2Id"
+        - !ImportValue
+          Fn::Sub: "${ProjectName}-${Environment}-PublicSubnet1Id"
+        - !ImportValue
+          Fn::Sub: "${ProjectName}-${Environment}-PublicSubnet2Id"
       SecurityGroups:
         - !Ref AlbSecurityGroup
 
-  # Target Group for Fargate (TargetType=ip)
+  # ----------------------------------------------------------------------------
+  # Target Group
+  # ----------------------------------------------------------------------------
   AlbTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: !Sub "${ProjectName}-${Environment}-tg"
-      VpcId:
-        Fn::ImportValue: !Sub "${ProjectName}-${Environment}-VpcId"
+      VpcId: !ImportValue
+        Fn::Sub: "${ProjectName}-${Environment}-VpcId"
       TargetType: ip
       Protocol: HTTP
       Port: 80
@@ -121,7 +151,9 @@ Resources:
       Matcher:
         HttpCode: "200-399"
 
-  # HTTP Listener
+  # ----------------------------------------------------------------------------
+  # Listener
+  # ----------------------------------------------------------------------------
   AlbListenerHttp:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
