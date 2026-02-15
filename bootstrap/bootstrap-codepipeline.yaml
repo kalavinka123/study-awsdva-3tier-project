@@ -98,6 +98,7 @@ Resources:
                   - !GetAtt CfnLintProject.Arn
                   - !GetAtt CfnNagProject.Arn
                   - !GetAtt CfnValidateProject.Arn
+                  - !GetAtt RdsInitProject.Arn
 
   CloudFormationRole:
     Type: AWS::IAM::Role
@@ -158,6 +159,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - cloudformation:ValidateTemplate
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - secretsmanager:GetSecretValue
                 Resource: '*'
 
   CfnValidateProject:
@@ -241,6 +247,39 @@ Resources:
                 - echo Starting cfn-nag security validation
                 - cfn_nag_scan --input-path stacks/
                 - echo cfn-nag validation completed successfully
+
+  RdsInitProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-rds-init'
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.11
+              commands:
+                - echo Installing MySQL client
+                - yum install -y mysql
+            build:
+              commands:
+                - echo Retrieving RDS endpoint and credentials
+                - export RDS_ENDPOINT=$(aws cloudformation describe-stacks --stack-name three-tier-RDS-Dev --query "Stacks[0].Outputs[?OutputKey=='RDSEndpoint'].OutputValue" --output text)
+                - export DB_SECRET=$(aws secretsmanager get-secret-value --secret-id dev/three-tier-db --query SecretString --output text)
+                - export DB_USER=$(echo $DB_SECRET | python3 -c "import sys, json; print(json.load(sys.stdin)['username'])")
+                - export DB_PASSWORD=$(echo $DB_SECRET | python3 -c "import sys, json; print(json.load(sys.stdin)['password'])")
+                - echo Initializing RDS database with schema
+                - mysql -h $RDS_ENDPOINT -u $DB_USER -p$DB_PASSWORD < sql/init.sql
+                - echo RDS initialization completed successfully
 
   # ============================================================================
   # CodePipeline Resource
@@ -391,7 +430,6 @@ Resources:
                 StackName: !Sub '${ProjectName}-SSM-secretsmanager-Dev'
                 TemplatePath: SourceOutputArtifact::stacks/03-ssm-secret-mng.yaml
                 RoleArn: !GetAtt CloudFormationRole.Arn
-                Capabilities: CAPABILITY_NAMED_IAM
               RunOrder: 3  
 
         # -----------------------------------------------------------------------------      
@@ -412,5 +450,18 @@ Resources:
                 StackName: !Sub '${ProjectName}-RDS-Dev'
                 TemplatePath: SourceOutputArtifact::stacks/04-rds.yaml
                 RoleArn: !GetAtt CloudFormationRole.Arn
-                Capabilities: CAPABILITY_NAMED_IAM
               RunOrder: 4                  
+
+        - Name: Initialize-RDS
+          Actions:
+            - Name: InitializeDatabase
+              InputArtifacts:
+                - Name: SourceOutputArtifact
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref RdsInitProject
+              RunOrder: 5
