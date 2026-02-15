@@ -53,10 +53,12 @@ Resources:
       AllocatedStorage: 20
       # [피드백 반영] Secrets Manager에서 username 키의 값을 가져옴
       # MasterUsername: !Ref DBUser
-      MasterUsername: '{{resolve:secretsmanager:dev/three-tier-db:SecretString:username}}'
+      # MasterUsername: '{{resolve:secretsmanager:dev/three-tier-db:SecretString:username}}'
+      MasterUsername: !Sub '{{resolve:secretsmanager:${Environment}/${ProjectName}-db:SecretString:username}}'
       # [피드백 반영] Secrets Manager에서 password 키의 값을 가져옴
       # MasterUserPassword: !Ref DBPassword
-      MasterUserPassword: '{{resolve:secretsmanager:dev/three-tier-db:SecretString:password}}'
+      # MasterUserPassword: '{{resolve:secretsmanager:dev/three-tier-db:SecretString:password}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${Environment}/${ProjectName}-db:SecretString:password}}'
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
@@ -70,3 +72,4 @@ Outputs:
     Export:
 
       Name: !Sub '${ProjectName}-${Environment}-RdsEndpoint'
+
