@@ -37,6 +37,7 @@ Resources:
     Type: AWS::KMS::Key
     Properties:
       Description: 'KMS key for encrypting ECS logs'
+      EnableKeyRotation: true
       KeyPolicy:
         Version: '2012-10-17'
         Statement:
@@ -171,6 +172,23 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AlbLogsAccessLogBucket
+        LogFilePrefix: 'alb-bucket-access-logs/'
+
+  AlbLogsAccessLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-alb-access-logs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
 
   AlbLogsBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -189,7 +207,6 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     DependsOn: AlbLogsBucketPolicy
     Properties:
-      Name: !Sub "${ProjectName}-${Environment}-alb"
       Scheme: internet-facing
       Type: application
       IpAddressType: ipv4
