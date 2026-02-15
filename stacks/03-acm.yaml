@@ -2,10 +2,14 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: '3-Tier Architecture - ACM Certificate Stack (us-east-1 for CloudFront)'
 
 # -----------------------------------------------------------
-# 의존: 02-route53 (HostedZoneId를 ImportValue로 참조)
-# 주의: CloudFront에서 사용하려면 반드시 us-east-1 리전에 배포해야 합니다.
+# 배포 리전: us-east-1 (CloudFront 필수 조건 + Route53과 ImportValue 공유)
+#
+# 의존: 02-route53 (같은 us-east-1 리전에서 HostedZoneId를 ImportValue로 참조)
 # DNS 검증 방식으로 Route 53에 자동으로 CNAME 레코드를 생성합니다.
 # 와일드카드(*.example.com) 포함하여 서브도메인도 커버합니다.
+#
+# 참고: CloudFormation Export/ImportValue는 동일 리전에서만 동작하므로
+#       02-route53, 03-acm, 04-cloudfront는 모두 us-east-1에 배포해야 합니다.
 #
 # TODO: 도메인 구매 후 parameters/acm.json의 DomainName을 실제 도메인으로 변경
 # -----------------------------------------------------------

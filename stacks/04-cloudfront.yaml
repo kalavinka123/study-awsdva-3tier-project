@@ -2,8 +2,16 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: '3-Tier Architecture - CloudFront Stack (ALB Origin)'
 
 # -----------------------------------------------------------
-# ALB를 Origin으로 사용하며, 동적 트래픽을 위해 캐시를 비활성화합니다.
+# 배포 리전: us-east-1 (Route53, ACM과 동일 리전에서 ImportValue 공유)
+# CloudFront는 글로벌 서비스이므로 us-east-1에 배포해도 동일하게 동작합니다.
+#
+# ALB(ap-northeast-2)를 Origin으로 사용하며, ALB DNS Name은 파라미터로 전달합니다.
+# (크로스 리전이지만 DNS 이름은 글로벌이므로 문제 없음)
+# 동적 트래픽을 위해 캐시를 비활성화합니다.
 # 현재 도메인 미구매 상태로 CloudFront 기본 도메인(xxx.cloudfront.net)을 사용합니다.
+#
+# 참고: CloudFormation Export/ImportValue는 동일 리전에서만 동작하므로
+#       02-route53, 03-acm, 04-cloudfront는 모두 us-east-1에 배포해야 합니다.
 #
 # TODO: 도메인 구매 후 Aliases, ViewerCertificate, DNSRecord 활성화
 # TODO: ALB 배포 후 parameters/cloudfront.json의 ALBDnsName을 실제 값으로 변경
