@@ -11,10 +11,6 @@ Parameters:
   DBUser:
     Type: String
     Default: 'admin'
-  DBPassword:
-    Type: String
-    NoEcho: true
-    Description: 'DB password (min 8 chars)'
 
 Resources:
   # 1. RDS용 보안 그룹 (Security Group)
@@ -50,7 +46,7 @@ Resources:
       DBInstanceClass: db.t3.micro # 프리티어 및 테스트용
       AllocatedStorage: 20
       MasterUsername: !Ref DBUser
-      MasterUserPassword: !Ref DBPassword
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${Environment}/${ProjectName}-db:SecretString:password}}'
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup

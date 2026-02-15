@@ -375,6 +375,26 @@ Resources:
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
               RunOrder: 2         
+
+        - Name: CreateChangeSet-SSM-secretsmanager-Dev
+          Actions:
+            - Name: CreateChangeSet
+              InputArtifacts:
+                - Name: SourceOutputArtifact
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: !Sub '${ProjectName}-SSM-secretsmanager-Dev'
+                ChangeSetName: !Sub '${ProjectName}-RDS-SSM-secretsmanager-ChangeSet'
+                TemplatePath: SourceOutputArtifact::stacks/03-ssm-secret-mng.yaml
+                TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
+                RoleArn: !GetAtt CloudFormationRole.Arn
+                Capabilities: CAPABILITY_NAMED_IAM
+              RunOrder: 3                 
               
         - Name: CreateChangeSet-RDS-Dev
           Actions:
@@ -390,11 +410,11 @@ Resources:
                 ActionMode: CHANGE_SET_REPLACE
                 StackName: !Sub '${ProjectName}-RDS-Dev'
                 ChangeSetName: !Sub '${ProjectName}-RDS-Dev-ChangeSet'
-                TemplatePath: SourceOutputArtifact::stacks/03-rds.yaml
+                TemplatePath: SourceOutputArtifact::stacks/04-rds.yaml
                 TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
-              RunOrder: 3                
+              RunOrder: 4                
 
         - Name: ApprovalForInfra-Dev
           Actions:
@@ -434,7 +454,21 @@ Resources:
                 ActionMode: CHANGE_SET_EXECUTE
                 StackName: !Sub '${ProjectName}-ECS-Dev'
                 ChangeSetName: !Sub '${ProjectName}-ECS-Dev-ChangeSet'
-              RunOrder: 2            
+              RunOrder: 2        
+
+        - Name: Deploy-SSM-secretsmanager-Dev
+          Actions:
+            - Name: ExecuteChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: !Sub '${ProjectName}-SSM-secretsmanager-Dev'
+                ChangeSetName: !Sub '${ProjectName}-SSM-secretsmanager-Dev-ChangeSet'
+              RunOrder: 3     
 
         - Name: Deploy-RDS-Dev
           Actions:
@@ -448,6 +482,6 @@ Resources:
                 ActionMode: CHANGE_SET_EXECUTE
                 StackName: !Sub '${ProjectName}-RDS-Dev'
                 ChangeSetName: !Sub '${ProjectName}-RDS-Dev-ChangeSet'
-              RunOrder: 3                  
+              RunOrder: 4                  
 
         ## TODO: More stages to come
