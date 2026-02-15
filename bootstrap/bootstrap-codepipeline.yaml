@@ -14,7 +14,7 @@ Parameters:
 
   GitHubDefaultBranch:
     Type: String
-    Default: 'feature/codepipeline-test-integration' ## TODO: release/**
+    Default: 'test/integration-test-branch' ## TODO: release/**
     Description: GitHub default branch name
 
 Resources:
@@ -350,13 +350,53 @@ Resources:
                 ActionMode: CHANGE_SET_REPLACE
                 StackName: !Sub '${ProjectName}-Network-Dev'
                 ChangeSetName: !Sub '${ProjectName}-Network-Dev-ChangeSet'
-                TemplatePath: SourceOutputArtifact::stacks/01-network.yaml
+                TemplatePath: SourceOutputArtifact::stacks/infra/01-network.yaml
                 TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
               RunOrder: 1
 
-        - Name: ApprovalForNetwork-Dev
+        - Name: CreateChangeSet-ECS-Dev
+          Actions:
+            - Name: CreateChangeSet
+              InputArtifacts:
+                - Name: SourceOutputArtifact
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: !Sub '${ProjectName}-ECS-Dev'
+                ChangeSetName: !Sub '${ProjectName}-ECS-Dev-ChangeSet'
+                TemplatePath: SourceOutputArtifact::stacks/infra/02-ecs.yaml
+                TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
+                RoleArn: !GetAtt CloudFormationRole.Arn
+                Capabilities: CAPABILITY_NAMED_IAM
+              RunOrder: 2         
+              
+        - Name: CreateChangeSet-RDS-Dev
+          Actions:
+            - Name: CreateChangeSet
+              InputArtifacts:
+                - Name: SourceOutputArtifact
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: !Sub '${ProjectName}-RDS-Dev'
+                ChangeSetName: !Sub '${ProjectName}-RDS-Dev-ChangeSet'
+                TemplatePath: SourceOutputArtifact::stacks/infra/03-rds.yaml
+                TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
+                RoleArn: !GetAtt CloudFormationRole.Arn
+                Capabilities: CAPABILITY_NAMED_IAM
+              RunOrder: 3                
+
+        - Name: ApprovalForInfra-Dev
           Actions:
             - Name: ApproveChangeSet
               ActionTypeId:
@@ -381,5 +421,33 @@ Resources:
                 StackName: !Sub '${ProjectName}-Network-Dev'
                 ChangeSetName: !Sub '${ProjectName}-Network-Dev-ChangeSet'
               RunOrder: 1
+
+        - Name: Deploy-ECS-Dev
+          Actions:
+            - Name: ExecuteChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: !Sub '${ProjectName}-ECS-Dev'
+                ChangeSetName: !Sub '${ProjectName}-ECS-Dev-ChangeSet'
+              RunOrder: 2            
+
+        - Name: Deploy-RDS-Dev
+          Actions:
+            - Name: ExecuteChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: !Sub '${ProjectName}-RDS-Dev'
+                ChangeSetName: !Sub '${ProjectName}-RDS-Dev-ChangeSet'
+              RunOrder: 3                  
 
         ## TODO: More stages to come
