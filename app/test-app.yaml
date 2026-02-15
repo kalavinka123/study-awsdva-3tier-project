@@ -7,9 +7,6 @@ Parameters:
     Type: String
     Default: dev
 
-  SubnetIds:
-    Type: List<AWS::EC2::Subnet::Id>
-
   ContainerImage:
     Type: String
 
@@ -32,6 +29,27 @@ Parameters:
     Default: 1
 
 Resources:
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - kms:Decrypt
+                Resource: '*'
+
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -42,10 +60,21 @@ Resources:
       Memory: !Ref Memory
       ExecutionRoleArn:
         Fn::ImportValue: !Sub "${ProjectName}-${Environment}-TaskExecutionRoleArn"
+      TaskRoleArn: !GetAtt TaskRole.Arn
       ContainerDefinitions:
         - Name: !Sub "${ProjectName}-${Environment}"
           Image: !Ref ContainerImage
           Essential: true
+          Environment:
+            - Name: DB_HOST
+              Value:
+                Fn::ImportValue: !Sub "${ProjectName}-${Environment}-RdsEndpoint"
+            - Name: DB_NAME
+              Value: testdb
+            - Name: DB_SECRET_NAME
+              Value: !Sub "${Environment}/${ProjectName}-db"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
           PortMappings:
             - ContainerPort: !Ref ContainerPort
               Protocol: tcp
@@ -76,7 +105,9 @@ Resources:
 
       NetworkConfiguration:
         AwsvpcConfiguration:
-          Subnets: !Ref SubnetIds
+          Subnets:
+            - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-PrivateSubnet1Id"
+            - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-PrivateSubnet2Id"
           SecurityGroups:
             - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-TaskSecurityGroupId"
           AssignPublicIp: DISABLED  # Private subnet
