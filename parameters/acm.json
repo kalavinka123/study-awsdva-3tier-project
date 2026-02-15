@@ -1,0 +1,7 @@
+{
+  "Parameters": {
+    "ProjectName": "three-tier",
+    "Environment": "dev",
+    "DomainName": "example.com"
+  }
+}

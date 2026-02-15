@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: '3-Tier Architecture - Route53 Stack (Public Hosted Zone)'
+
+# -----------------------------------------------------------
+# 이 스택은 가장 먼저 배포되어야 합니다.
+# 03-acm, 04-cloudfront 스택에서 HostedZoneId를 ImportValue로 참조합니다.
+# 배포 후 출력되는 NameServers를 도메인 등록 대행사에 설정해야 합니다.
+#
+# TODO: 도메인 구매 후 parameters/route53.json의 DomainName을 실제 도메인으로 변경
+# -----------------------------------------------------------
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'three-tier'
+
+  Environment:
+    Type: String
+    Default: 'dev'
+
+  DomainName:
+    Type: String
+    Description: 'Root domain name for the hosted zone (e.g. example.com)'
+
+Resources:
+  # Public Hosted Zone
+  PublicHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+      HostedZoneConfig:
+        Comment: !Sub '${ProjectName}-${Environment} public hosted zone'
+      HostedZoneTags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-hz'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  PublicHostedZoneId:
+    Description: Public Hosted Zone ID
+    Value: !Ref PublicHostedZone
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicHostedZoneId'
+
+  DomainName:
+    Description: Domain name of the hosted zone
+    Value: !Ref DomainName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DomainName'
+
+  NameServers:
+    Description: Name servers for the hosted zone
+    Value: !Join [', ', !GetAtt PublicHostedZone.NameServers]
