@@ -200,6 +200,12 @@ Resources:
               Service: elasticloadbalancing.amazonaws.com
             Action: 's3:PutObject'
             Resource: !Sub '${AlbLogsBucket.Arn}/*'
+          - Sid: AWSLogDeliveryAclCheck
+            Effect: Allow
+            Principal:
+              Service: elasticloadbalancing.amazonaws.com
+            Action: 's3:GetBucketAcl'
+            Resource: !GetAtt AlbLogsBucket.Arn
 
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer

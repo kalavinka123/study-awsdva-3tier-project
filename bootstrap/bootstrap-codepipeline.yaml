@@ -344,39 +344,12 @@ Resources:
                 Version: '1'
                 Provider: CloudFormation
               Configuration:
-                ActionMode: CHANGE_SET_REPLACE
+                ActionMode: CREATE_UPDATE
                 StackName: !Sub '${ProjectName}-Network-Dev'
-                ChangeSetName: !Sub '${ProjectName}-Network-Dev-ChangeSet'
                 TemplatePath: SourceOutputArtifact::stacks/01-network.yaml
                 TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
-              RunOrder: 1
-
-        - Name: ApprovalForVPC-Dev
-          Actions:
-            - Name: ApproveChangeSet
-              ActionTypeId:
-                Category: Approval
-                Owner: AWS
-                Version: '1'
-                Provider: Manual
-              Configuration:
-                CustomData: 'Please review the Network Dev changeset and approve to proceed with deployment'
-              RunOrder: 1
-
-        - Name: Deploy-Network-Dev
-          Actions:
-            - Name: ExecuteChangeSet
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Version: '1'
-                Provider: CloudFormation
-              Configuration:
-                ActionMode: CHANGE_SET_EXECUTE
-                StackName: !Sub '${ProjectName}-Network-Dev'
-                ChangeSetName: !Sub '${ProjectName}-Network-Dev-ChangeSet'
               RunOrder: 1
 
         # -----------------------------------------------------------------------------      
@@ -393,39 +366,12 @@ Resources:
                 Version: '1'
                 Provider: CloudFormation
               Configuration:
-                ActionMode: CHANGE_SET_REPLACE
+                ActionMode: CREATE_UPDATE
                 StackName: !Sub '${ProjectName}-ECS-Dev'
-                ChangeSetName: !Sub '${ProjectName}-ECS-Dev-ChangeSet'
                 TemplatePath: SourceOutputArtifact::stacks/02-ecs.yaml
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
-              RunOrder: 1        
-
-        - Name: ApprovalForECS-Dev
-          Actions:
-            - Name: ApproveChangeSet
-              ActionTypeId:
-                Category: Approval
-                Owner: AWS
-                Version: '1'
-                Provider: Manual
-              Configuration:
-                CustomData: 'Please review the ECS Dev changeset and approve to proceed with deployment'
-              RunOrder: 1
-
-        - Name: Deploy-ECS-Dev
-          Actions:
-            - Name: ExecuteChangeSet
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Version: '1'
-                Provider: CloudFormation
-              Configuration:
-                ActionMode: CHANGE_SET_EXECUTE
-                StackName: !Sub '${ProjectName}-ECS-Dev'
-                ChangeSetName: !Sub '${ProjectName}-ECS-Dev-ChangeSet'
-              RunOrder: 1                    
+              RunOrder: 2       
 
         # -----------------------------------------------------------------------------      
         # CodePipeline - SSM
@@ -441,40 +387,13 @@ Resources:
                 Version: '1'
                 Provider: CloudFormation
               Configuration:
-                ActionMode: CHANGE_SET_REPLACE
+                ActionMode: CREATE_UPDATE
                 StackName: !Sub '${ProjectName}-SSM-secretsmanager-Dev'
-                ChangeSetName: !Sub '${ProjectName}-RDS-SSM-secretsmanager-ChangeSet'
                 TemplatePath: SourceOutputArtifact::stacks/03-ssm-secret-mng.yaml
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
-              RunOrder: 1   
+              RunOrder: 3  
 
-        - Name: ApprovalForSsmSecretManager-Dev
-          Actions:
-            - Name: ApproveChangeSet
-              ActionTypeId:
-                Category: Approval
-                Owner: AWS
-                Version: '1'
-                Provider: Manual
-              Configuration:
-                CustomData: 'Please review the SsmSecretManager Dev changeset and approve to proceed with deployment'
-              RunOrder: 1
-
-        - Name: Deploy-SSM-secretsmanager-Dev
-          Actions:
-            - Name: ExecuteChangeSet
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Version: '1'
-                Provider: CloudFormation
-              Configuration:
-                ActionMode: CHANGE_SET_EXECUTE
-                StackName: !Sub '${ProjectName}-SSM-secretsmanager-Dev'
-                ChangeSetName: !Sub '${ProjectName}-SSM-secretsmanager-Dev-ChangeSet'
-              RunOrder: 1         
-              
         # -----------------------------------------------------------------------------      
         # CodePipeline - RDS
         # -----------------------------------------------------------------------------   
@@ -489,36 +408,9 @@ Resources:
                 Version: '1'
                 Provider: CloudFormation
               Configuration:
-                ActionMode: CHANGE_SET_REPLACE
+                ActionMode: CREATE_UPDATE
                 StackName: !Sub '${ProjectName}-RDS-Dev'
-                ChangeSetName: !Sub '${ProjectName}-RDS-Dev-ChangeSet'
                 TemplatePath: SourceOutputArtifact::stacks/04-rds.yaml
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
-              RunOrder: 1               
-
-        - Name: ApprovalForRds-Dev
-          Actions:
-            - Name: ApproveChangeSet
-              ActionTypeId:
-                Category: Approval
-                Owner: AWS
-                Version: '1'
-                Provider: Manual
-              Configuration:
-                CustomData: 'Please review the Rds Dev changeset and approve to proceed with deployment'
-              RunOrder: 1
-
-        - Name: Deploy-RDS-Dev
-          Actions:
-            - Name: ExecuteChangeSet
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Version: '1'
-                Provider: CloudFormation
-              Configuration:
-                ActionMode: CHANGE_SET_EXECUTE
-                StackName: !Sub '${ProjectName}-RDS-Dev'
-                ChangeSetName: !Sub '${ProjectName}-RDS-Dev-ChangeSet'
-              RunOrder: 1                  
+              RunOrder: 4                  
