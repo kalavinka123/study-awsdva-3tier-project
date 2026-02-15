@@ -213,11 +213,12 @@ Resources:
                 - echo Pushing the Docker images...
                 - docker push $REPOSITORY_URI:latest
                 - docker push $REPOSITORY_URI:$IMAGE_TAG
-                - echo Writing image definitions file...
-                - printf '[{"name":"three-tier-dev","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+                - echo Writing image tag for CloudFormation...
+                - cd ..
+                - echo "{\"Parameters\":{\"ContainerImage\":\"$REPOSITORY_URI:$IMAGE_TAG\"}}" > image-params.json
           artifacts:
             files:
-              - imagedefinitions.json
+              - image-params.json
 
   # ============================================================================
   # Application Deployment Pipeline
@@ -294,10 +295,7 @@ Resources:
                 ActionMode: CREATE_UPDATE
                 StackName: !Sub '${ProjectName}-App-${Environment}'
                 TemplatePath: SourceOutput::app/test-app.yaml
-                ParameterOverrides: |
-                  {
-                    "ContainerImage": { "Fn::GetParam": ["BuildOutput", "imagedefinitions.json", "imageUri"] }
-                  }
+                TemplateConfiguration: BuildOutput::image-params.json
                 RoleArn: !GetAtt AppCloudFormationRole.Arn
                 Capabilities: CAPABILITY_IAM
               RunOrder: 1

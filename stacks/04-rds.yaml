@@ -67,3 +67,9 @@ Outputs:
     Value: !GetAtt PrimaryDBInstance.Endpoint.Address
     Export:
       Name: !Sub '${ProjectName}-${Environment}-RdsEndpoint'
+
+  RdsSecurityGroupId:
+    Description: 'RDS Security Group ID'
+    Value: !Ref DBSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-RdsSecurityGroupId'

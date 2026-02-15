@@ -68,10 +68,10 @@ def get_users():
         
         connection.close()
         
-        return jsonify({
-            'count': len(users),
-            'users': users
-        }), 200
+        # Format as "Hello {user}" for each user
+        greetings = [f"Hello {user['name']}" for user in users]
+        
+        return '<br>'.join(greetings), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

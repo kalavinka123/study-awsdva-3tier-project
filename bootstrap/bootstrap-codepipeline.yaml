@@ -22,6 +22,24 @@ Resources:
   # Pre-requisite Resources
   # ============================================================================
 
+  RdsInitSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${ProjectName} RDS initialization CodeBuild security group"
+      VpcId:
+        Fn::ImportValue: !Sub '${ProjectName}-dev-VpcId'
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306s
+          CidrIp: 10.0.0.0/16
+          Description: 'Allow MySQL connection to RDS within VPC'
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: 'Allow HTTPS for AWS API calls'
+
   CodePipelineArtifactStoreBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -271,14 +289,14 @@ Resources:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
-      VpcConfig:
-        VpcId:
-          Fn::ImportValue: !Sub '${ProjectName}-dev-VpcId'
-        Subnets:
-          - Fn::ImportValue: !Sub '${ProjectName}-dev-PrivateSubnet1Id'
-          - Fn::ImportValue: !Sub '${ProjectName}-dev-PrivateSubnet2Id'
-        SecurityGroupIds:
-          - Fn::ImportValue: !Sub '${ProjectName}-dev-TaskSecurityGroupId'
+      # VpcConfig:
+      #   VpcId:
+      #     Fn::ImportValue: !Sub '${ProjectName}-dev-VpcId'
+      #   Subnets:
+      #     - Fn::ImportValue: !Sub '${ProjectName}-dev-PrivateSubnet1Id'
+      #     - Fn::ImportValue: !Sub '${ProjectName}-dev-PrivateSubnet2Id'
+      #   SecurityGroupIds:
+      #     - !Ref RdsInitSecurityGroup
       Source:
         Type: CODEPIPELINE
         BuildSpec: |
@@ -325,6 +343,8 @@ Resources:
                   Excludes:
                     - main
                 FilePaths:
+                  Includes:
+                    - 'stacks/**'
                   Excludes:
                     - '**/README.md'
                     - '**/LICENSE'
