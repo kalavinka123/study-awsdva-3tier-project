@@ -157,24 +157,7 @@ Resources:
   # ----------------------------------------------------------------------------
   # ALB
   # ----------------------------------------------------------------------------
-  AlbLogsBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub '${ProjectName}-${Environment}-alb-logs-${AWS::AccountId}'
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      LoggingConfiguration:
-        DestinationBucketName: !Ref AlbLogsAccessLogBucket
-        LogFilePrefix: 'alb-bucket-access-logs/'
-
-  AlbLogsAccessLogBucket:
+  AlbAccessLogsBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${ProjectName}-${Environment}-alb-access-logs-${AWS::AccountId}'
@@ -187,29 +170,40 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3AccessLogsBucket
+        LogFilePrefix: 'alb-bucket-access-logs/'
 
-  AlbLogsBucketPolicy:
+  S3AccessLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-s3-access-logs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  AlbAccessLogsBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref AlbLogsBucket
+      Bucket: !Ref AlbAccessLogsBucket
       PolicyDocument:
+        Version: '2012-10-17'
         Statement:
-          - Sid: AWSLogDeliveryWrite
-            Effect: Allow
+          - Effect: Allow
             Principal:
-              Service: elasticloadbalancing.amazonaws.com
+              Service: logdelivery.elasticloadbalancing.amazonaws.com
             Action: 's3:PutObject'
-            Resource: !Sub '${AlbLogsBucket.Arn}/*'
-          - Sid: AWSLogDeliveryAclCheck
-            Effect: Allow
-            Principal:
-              Service: elasticloadbalancing.amazonaws.com
-            Action: 's3:GetBucketAcl'
-            Resource: !GetAtt AlbLogsBucket.Arn
+            Resource: !Sub '${AlbAccessLogsBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
 
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    DependsOn: AlbLogsBucketPolicy
+    DependsOn: AlbAccessLogsBucketPolicy
     Properties:
       Scheme: internet-facing
       Type: application
@@ -225,7 +219,7 @@ Resources:
         - Key: access_logs.s3.enabled
           Value: 'true'
         - Key: access_logs.s3.bucket
-          Value: !Ref AlbLogsBucket
+          Value: !Ref AlbAccessLogsBucket
 
   # ----------------------------------------------------------------------------
   # Target Group

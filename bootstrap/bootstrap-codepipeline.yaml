@@ -333,9 +333,9 @@ Resources:
         # -----------------------------------------------------------------------------      
         # CodePipeline - VPC
         # -----------------------------------------------------------------------------       
-        - Name: CreateChangeSet-Network-Dev
+        - Name: Deploy-Network-Dev
           Actions:
-            - Name: CreateChangeSet
+            - Name: DeployStack
               InputArtifacts:
                 - Name: SourceOutputArtifact
               ActionTypeId:
@@ -355,9 +355,9 @@ Resources:
         # -----------------------------------------------------------------------------      
         # CodePipeline - ECS
         # -----------------------------------------------------------------------------   
-        - Name: CreateChangeSet-ECS-Dev
+        - Name: Deploy-ECS-Dev
           Actions:
-            - Name: CreateChangeSet
+            - Name: DeployStack
               InputArtifacts:
                 - Name: SourceOutputArtifact
               ActionTypeId:
@@ -376,9 +376,9 @@ Resources:
         # -----------------------------------------------------------------------------      
         # CodePipeline - SSM
         # -----------------------------------------------------------------------------   
-        - Name: CreateChangeSet-SSM-secretsmanager-Dev
+        - Name: Deploy-SSM-secretsmanager-Dev
           Actions:
-            - Name: CreateChangeSet
+            - Name: DeployStack
               InputArtifacts:
                 - Name: SourceOutputArtifact
               ActionTypeId:
@@ -397,9 +397,9 @@ Resources:
         # -----------------------------------------------------------------------------      
         # CodePipeline - RDS
         # -----------------------------------------------------------------------------   
-        - Name: CreateChangeSet-RDS-Dev
+        - Name: Deploy-RDS-Dev
           Actions:
-            - Name: CreateChangeSet
+            - Name: DeployStack
               InputArtifacts:
                 - Name: SourceOutputArtifact
               ActionTypeId:
