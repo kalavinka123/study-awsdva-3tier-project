@@ -18,7 +18,6 @@ Resources:
   EcrRepository:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: !Sub "${ProjectName}-${Environment}"
       ImageTagMutability: IMMUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
@@ -34,11 +33,47 @@ Resources:
   # ----------------------------------------------------------------------------
   # Logs
   # ----------------------------------------------------------------------------
+  LogsKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: 'KMS key for encrypting ECS logs'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow CloudWatch Logs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:CreateGrant'
+              - 'kms:DescribeKey'
+            Resource: '*'
+            Condition:
+              ArnLike:
+                'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-${Environment}'
+
+  LogsKmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-${Environment}-logs'
+      TargetKeyId: !Ref LogsKmsKey
+
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/ecs/${ProjectName}-${Environment}"
       RetentionInDays: 14
+      KmsKeyId: !GetAtt LogsKmsKey.Arn
 
   # ----------------------------------------------------------------------------
   # Execution Role
@@ -87,6 +122,7 @@ Resources:
       FromPort: 80
       ToPort: 80
       CidrIp: 0.0.0.0/0
+      Description: 'Allow HTTP traffic from internet to ALB'
 
   # 2️⃣ ALB → ECS (Ingress on ECS)
   TaskIngressFromAlb:
@@ -97,6 +133,7 @@ Resources:
       FromPort: 80
       ToPort: 80
       SourceSecurityGroupId: !Ref AlbSecurityGroup
+      Description: 'Allow traffic from ALB to ECS tasks'
 
   # 3️⃣ ALB → ECS (Egress on ALB)
   AlbEgressToTask:
@@ -107,6 +144,7 @@ Resources:
       FromPort: 80
       ToPort: 80
       DestinationSecurityGroupId: !Ref TaskSecurityGroup
+      Description: 'Allow ALB to communicate with ECS tasks'
 
   # 4️⃣ ECS → Internet (NAT 통해 외부 통신)
   TaskEgressInternet:
@@ -115,12 +153,41 @@ Resources:
       GroupId: !Ref TaskSecurityGroup
       IpProtocol: "-1"
       CidrIp: 0.0.0.0/0
+      Description: 'Allow ECS tasks to access internet via NAT'
 
   # ----------------------------------------------------------------------------
   # ALB
   # ----------------------------------------------------------------------------
+  AlbLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-alb-logs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  AlbLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AlbLogsBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AWSLogDeliveryWrite
+            Effect: Allow
+            Principal:
+              Service: elasticloadbalancing.amazonaws.com
+            Action: 's3:PutObject'
+            Resource: !Sub '${AlbLogsBucket.Arn}/*'
+
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: AlbLogsBucketPolicy
     Properties:
       Name: !Sub "${ProjectName}-${Environment}-alb"
       Scheme: internet-facing
@@ -133,6 +200,11 @@ Resources:
           Fn::Sub: "${ProjectName}-${Environment}-PublicSubnet2Id"
       SecurityGroups:
         - !Ref AlbSecurityGroup
+      LoadBalancerAttributes:
+        - Key: access_logs.s3.enabled
+          Value: 'true'
+        - Key: access_logs.s3.bucket
+          Value: !Ref AlbLogsBucket
 
   # ----------------------------------------------------------------------------
   # Target Group

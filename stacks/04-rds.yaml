@@ -8,9 +8,6 @@ Parameters:
   Environment:
     Type: String
     Default: 'dev'
-  DBUser:
-    Type: String
-    Default: 'admin'
 
 Resources:
   # 1. RDS용 보안 그룹 (Security Group)
@@ -19,13 +16,17 @@ Resources:
     Properties:
       GroupDescription: 'Security group for RDS MySQL'
       VpcId:
-        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-VpcId' # 네트워크 파일과 연결
+        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-VpcId'
       SecurityGroupIngress:
-        # 테스트를 위해 임시로 내부 네트워크(VPC 전체) 대역 10.0.0.0/16 에서의 접속 허용
         - IpProtocol: tcp
           FromPort: 3306
           ToPort: 3306
           CidrIp: '10.0.0.0/16'
+          Description: 'Allow MySQL access from VPC internal network'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: '127.0.0.1/32'
+          Description: 'Deny all outbound traffic by default'
 
   # 2. DB 서브넷 그룹 (DB Subnet Group)
   DBSubnetGroup:
@@ -40,18 +41,24 @@ Resources:
   # 3. RDS 인스턴스 (Primary 1개)
   PrimaryDBInstance:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
     Properties:
       Engine: mysql
       EngineVersion: '8.4.5'
-      DBInstanceClass: db.t3.micro # 프리티어 및 테스트용
+      DBInstanceClass: db.t3.micro
       AllocatedStorage: 20
-      MasterUsername: !Ref DBUser
+      StorageEncrypted: true
+      MasterUsername: !Sub '{{resolve:secretsmanager:${Environment}/${ProjectName}-db:SecretString:username}}'
       MasterUserPassword: !Sub '{{resolve:secretsmanager:${Environment}/${ProjectName}-db:SecretString:password}}'
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
-      PubliclyAccessible: false # DB 서브넷에 있으므로 외부 인터넷에서 직접 접근 불가
-      MultiAZ: false # 요구사항: Read Replica 무시, Primary 하나만
+      PubliclyAccessible: false
+      MultiAZ: false
+      DeletionProtection: true
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
 
 Outputs:
   RDSEndpoint:
