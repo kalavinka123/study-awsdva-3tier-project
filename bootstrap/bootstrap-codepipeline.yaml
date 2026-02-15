@@ -111,13 +111,7 @@ Resources:
               Service: cloudformation.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:  ## TODO: Finer-grain permission
-        - arn:aws:iam::aws:policy/AmazonVPCFullAccess
-        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
-        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
-        - arn:aws:iam::aws:policy/AmazonRDSFullAccess
-        - arn:aws:iam::aws:policy/AmazonCognitoPowerUser
-        - arn:aws:iam::aws:policy/AmazonRoute53FullAccess
-        - arn:aws:iam::aws:policy/CloudFrontFullAccess
+        - arn:aws:iam::aws:policy/AdministratorAccess
 
   GithubConnection:
     Type: AWS::CodeStarConnections::Connection
