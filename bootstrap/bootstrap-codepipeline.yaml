@@ -269,7 +269,7 @@ Resources:
                 python: 3.11
               commands:
                 - echo Installing MySQL client
-                - yum install -y mysql
+                - yum install -y mariadb
             build:
               commands:
                 - echo Retrieving RDS endpoint and credentials
