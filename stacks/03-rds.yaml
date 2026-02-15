@@ -46,7 +46,7 @@ Resources:
     Type: AWS::RDS::DBInstance
     Properties:
       Engine: mysql
-      EngineVersion: '8.0'
+      EngineVersion: '8.0.15'
       DBInstanceClass: db.t3.micro # 프리티어 및 테스트용
       AllocatedStorage: 20
       MasterUsername: !Ref DBUser
