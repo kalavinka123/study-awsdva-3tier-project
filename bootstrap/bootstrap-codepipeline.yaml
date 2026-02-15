@@ -89,7 +89,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - iam:PassRole
-                Resource: '*'
+                Resource: '*' ## TODO: Specify Resource
               - Effect: Allow
                 Action:
                   - codebuild:BatchGetBuilds
@@ -110,7 +110,7 @@ Resources:
             Principal:
               Service: cloudformation.amazonaws.com
             Action: sts:AssumeRole
-      ManagedPolicyArns:
+      ManagedPolicyArns:  ## TODO: Finer-grain permission
         - arn:aws:iam::aws:policy/AmazonVPCFullAccess
         - arn:aws:iam::aws:policy/CloudFormationFullAccess
         - arn:aws:iam::aws:policy/AmazonECS_FullAccess
