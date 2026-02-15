@@ -2,6 +2,6 @@
   "Parameters": {
     "ProjectName": "three-tier",
     "Environment": "dev",
-    "ALBDnsName": "my-alb-123456.ap-northeast-2.elb.amazonaws.com"
+    "ALBDnsName": "three-tier-dev-alb-2104627028.ap-northeast-2.elb.amazonaws.com"
   }
 }
