@@ -397,7 +397,6 @@ Resources:
                 StackName: !Sub '${ProjectName}-ECS-Dev'
                 ChangeSetName: !Sub '${ProjectName}-ECS-Dev-ChangeSet'
                 TemplatePath: SourceOutputArtifact::stacks/02-ecs.yaml
-                TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
               RunOrder: 1        
@@ -446,7 +445,6 @@ Resources:
                 StackName: !Sub '${ProjectName}-SSM-secretsmanager-Dev'
                 ChangeSetName: !Sub '${ProjectName}-RDS-SSM-secretsmanager-ChangeSet'
                 TemplatePath: SourceOutputArtifact::stacks/03-ssm-secret-mng.yaml
-                TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
               RunOrder: 1   
@@ -495,7 +493,6 @@ Resources:
                 StackName: !Sub '${ProjectName}-RDS-Dev'
                 ChangeSetName: !Sub '${ProjectName}-RDS-Dev-ChangeSet'
                 TemplatePath: SourceOutputArtifact::stacks/04-rds.yaml
-                TemplateConfiguration: SourceOutputArtifact::parameters/dev.json
                 RoleArn: !GetAtt CloudFormationRole.Arn
                 Capabilities: CAPABILITY_NAMED_IAM
               RunOrder: 1               

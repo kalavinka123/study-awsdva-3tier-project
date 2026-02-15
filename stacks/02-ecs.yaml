@@ -4,14 +4,12 @@ Description: "Backend: ECR + ECS (Fargate) + ALB"
 Parameters:
   ProjectName:
     Type: String
-    Default: "three-tier"
-
+    Default: 'three-tier'
   Environment:
     Type: String
-    Default: "dev"
+    Default: 'dev'
 
 Resources:
-
   # ----------------------------------------------------------------------------
   # ECR
   # ----------------------------------------------------------------------------
