@@ -42,6 +42,7 @@ Resources:
   PrimaryDBInstance:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
     Properties:
       Engine: mysql
       EngineVersion: '8.4.5'
