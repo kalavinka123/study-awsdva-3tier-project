@@ -1,0 +1,310 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Application Deployment Pipeline - Build Docker Image and Deploy to ECS'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'three-tier'
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name
+
+  GitHubRepositoryId:
+    Type: String
+    Default: 'kalavinka123/study-awsdva-3tier-project'
+    Description: 'GitHub repository Id. The format: "GitHubOwner/GitHubRepo"'
+
+  GitHubDefaultBranch:
+    Type: String
+    Default: 'test/integration-test-branch'
+    Description: GitHub default branch name
+
+Resources:
+  # ============================================================================
+  # App Pipeline Resources
+  # ============================================================================
+
+  AppPipelineArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-app-pipeline-artifacts-${AWS::Region}-${AWS::AccountId}'
+
+  AppPipelineArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AppPipelineArtifactBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: DenyUnEncryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Join [ '', [ !GetAtt AppPipelineArtifactBucket.Arn, '/*' ] ]
+            Condition:
+              StringNotEquals: 
+                s3:x-amz-server-side-encryption: aws:kms
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: !Join [ '', [ !GetAtt AppPipelineArtifactBucket.Arn, '/*' ] ]
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  AppPipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-app-pipeline-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: 
+                aws:SourceAccount: !Sub ${AWS::AccountId}
+      Policies:
+        - PolicyName: AppPipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource:
+                  - !GetAtt AppPipelineArtifactBucket.Arn
+                  - !Sub '${AppPipelineArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - codestar-connections:UseConnection
+                Resource:
+                  Fn::ImportValue: !Sub '${ProjectName}-GithubConnectionArn'
+              - Effect: Allow
+                Action:
+                  - cloudformation:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource:
+                  - !GetAtt DockerBuildProject.Arn
+
+  AppCloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-app-cloudformation-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  AppCodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-app-codebuild-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AppCodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${ProjectName}-docker-build*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub '${AppPipelineArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt AppPipelineArtifactBucket.Arn
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource: '*'
+
+  # ============================================================================
+  # CodeBuild Project for Docker Build
+  # ============================================================================
+
+  DockerBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-docker-build'
+      ServiceRole: !GetAtt AppCodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: IMAGE_REPO_NAME
+            Value: !Sub '${ProjectName}-${Environment}-sample-test-app'
+          - Name: IMAGE_TAG
+            Value: latest
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+                - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+                - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+                - IMAGE_TAG=${COMMIT_HASH:=latest}
+            build:
+              commands:
+                - echo Build started on `date`
+                - echo Building the Docker image...
+                - cd app
+                - docker build -t $REPOSITORY_URI:latest .
+                - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - echo Pushing the Docker images...
+                - docker push $REPOSITORY_URI:latest
+                - docker push $REPOSITORY_URI:$IMAGE_TAG
+                - echo Writing image definitions file...
+                - printf '[{"name":"three-tier-dev","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+          artifacts:
+            files:
+              - imagedefinitions.json
+
+  # ============================================================================
+  # Application Deployment Pipeline
+  # ============================================================================
+
+  AppPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub '${ProjectName}-app-pipeline'
+      RoleArn: !GetAtt AppPipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref AppPipelineArtifactBucket
+
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHubSource
+            Push:
+              - Branches:
+                  Includes:
+                    - !Ref GitHubDefaultBranch
+                FilePaths:
+                  Includes:
+                    - 'app/**'
+
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: '1'
+                Provider: CodeStarSourceConnection
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                BranchName: !Ref GitHubDefaultBranch
+                ConnectionArn:
+                  Fn::ImportValue: !Sub '${ProjectName}-GithubConnectionArn'
+                FullRepositoryId: !Ref GitHubRepositoryId
+                OutputArtifactFormat: CODE_ZIP
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: BuildDockerImage
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref DockerBuildProject
+              RunOrder: 1
+
+        - Name: Deploy
+          Actions:
+            - Name: DeployToECS
+              InputArtifacts:
+                - Name: SourceOutput
+                - Name: BuildOutput
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: '1'
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Sub '${ProjectName}-App-${Environment}'
+                TemplatePath: SourceOutput::app/test-app.yaml
+                ParameterOverrides: |
+                  {
+                    "ContainerImage": { "Fn::GetParam": ["BuildOutput", "imagedefinitions.json", "imageUri"] }
+                  }
+                RoleArn: !GetAtt AppCloudFormationRole.Arn
+                Capabilities: CAPABILITY_IAM
+              RunOrder: 1
+
+Outputs:
+  PipelineName:
+    Description: Application pipeline name
+    Value: !Ref AppPipeline
+    Export:
+      Name: !Sub '${ProjectName}-App-${Environment}-PipelineName'

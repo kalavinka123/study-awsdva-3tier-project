@@ -16,6 +16,7 @@ Resources:
   EcrRepository:
     Type: AWS::ECR::Repository
     Properties:
+      RepositoryName: !Sub "${ProjectName}-${Environment}-sample-test-app"
       ImageTagMutability: IMMUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
@@ -279,3 +280,8 @@ Outputs:
 
   AlbDnsName:
     Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-EcrRepositoryUri"

@@ -164,6 +164,18 @@ Resources:
                 Action:
                   - cloudformation:DescribeStacks
                   - secretsmanager:GetSecretValue
+                  - kms:Decrypt
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeDhcpOptions
+                  - ec2:DescribeVpcs
+                  - ec2:CreateNetworkInterfacePermission
                 Resource: '*'
 
   CfnValidateProject:
@@ -259,6 +271,14 @@ Resources:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+      VpcConfig:
+        VpcId:
+          Fn::ImportValue: !Sub '${ProjectName}-dev-VpcId'
+        Subnets:
+          - Fn::ImportValue: !Sub '${ProjectName}-dev-PrivateSubnet1Id'
+          - Fn::ImportValue: !Sub '${ProjectName}-dev-PrivateSubnet2Id'
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub '${ProjectName}-dev-TaskSecurityGroupId'
       Source:
         Type: CODEPIPELINE
         BuildSpec: |
@@ -269,7 +289,7 @@ Resources:
                 python: 3.11
               commands:
                 - echo Installing MySQL client
-                - yum install -y mariadb
+                - dnf install -y mariadb105
             build:
               commands:
                 - echo Retrieving RDS endpoint and credentials
@@ -465,3 +485,10 @@ Resources:
               Configuration:
                 ProjectName: !Ref RdsInitProject
               RunOrder: 5
+
+Outputs:
+  GithubConnectionArn:
+    Description: GitHub connection ARN
+    Value: !Ref GithubConnection
+    Export:
+      Name: !Sub '${ProjectName}-GithubConnectionArn'
