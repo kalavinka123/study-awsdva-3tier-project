@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: '3-Tier Architecture - ACM Certificate Stack (us-east-1 for CloudFront)'
+
+# -----------------------------------------------------------
+# 배포 리전: us-east-1 (CloudFront 필수 조건 + Route53과 ImportValue 공유)
+#
+# 의존: 02-route53 (같은 us-east-1 리전에서 HostedZoneId를 ImportValue로 참조)
+# DNS 검증 방식으로 Route 53에 자동으로 CNAME 레코드를 생성합니다.
+# 와일드카드(*.example.com) 포함하여 서브도메인도 커버합니다.
+#
+# 참고: CloudFormation Export/ImportValue는 동일 리전에서만 동작하므로
+#       02-route53, 03-acm, 04-cloudfront는 모두 us-east-1에 배포해야 합니다.
+#
+# TODO: 도메인 구매 후 parameters/acm.json의 DomainName을 실제 도메인으로 변경
+# -----------------------------------------------------------
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'three-tier'
+
+  Environment:
+    Type: String
+    Default: 'dev'
+
+  DomainName:
+    Type: String
+    Description: 'Root domain name (e.g. example.com)'
+
+Resources:
+  # ACM Certificate
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub '*.${DomainName}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId:
+            Fn::ImportValue: !Sub '${ProjectName}-${Environment}-PublicHostedZoneId'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-certificate'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  CertificateArn:
+    Description: ACM Certificate ARN
+    Value: !Ref Certificate
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-CertificateArn'
